@@ -3,10 +3,19 @@
 
 #include <iostream>
 #include <memory>
+#include <random>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
+
+std::random_device random_device;
+std::mt19937_64 generator(random_device());
+std::binomial_distribution tile_distribution(1, 0.05);
+
+TTF_Font* font = nullptr;
 
 SDL_Renderer* renderer = nullptr;
 
@@ -15,7 +24,7 @@ SDL_Color red = { 0xFF, 0x00, 0x00, 0xFF };
 
 namespace Configuration
 {
-	size_t TileSize = 16;
+	size_t TileSize = 32;
 } /** Namespace Configuration */
 
 class IGameObject
@@ -24,12 +33,32 @@ public:
 	virtual void render() = 0;
 };
 
+enum class TileClickResponse
+{
+	Nothing,
+	Revealed,
+	Exploded
+};
+
+enum class TileState
+{
+	Undrawn,
+	Hidden,
+	Revealed,
+	Flagged,
+	Exploded
+};
+
 class Tile : IGameObject
 {
 	int x;
 	int y;
-	
-	bool clicked = false;
+
+	bool is_bomb = false;
+	size_t adjacent_bombs = 0;
+
+	TileState state = TileState::Hidden;
+	TileState previousState = TileState::Undrawn;
 
 public:
 	Tile(int x, int y)
@@ -38,32 +67,162 @@ public:
 		//
 	}
 
-	void click()
+	int getX() const noexcept
 	{
-		clicked = !clicked;
+		return x;
 	}
 
+	int getY() const noexcept
+	{
+		return y;
+	}
+
+	void setBomb()
+	{
+		is_bomb = true;
+		previousState = TileState::Undrawn;
+	}
+
+	bool isBomb() const noexcept
+	{
+		return is_bomb;
+	}
+
+	void setAdjacentBombs(size_t n)
+	{
+		adjacent_bombs = n;
+	}
+
+	size_t getAdjacentBombs() const noexcept
+	{
+		return adjacent_bombs;
+	}
+
+	bool isRevealable() const noexcept
+	{
+		return (state == TileState::Hidden) && (!isBomb());
+	}
+
+	void reveal() noexcept
+	{
+		state = TileState::Revealed;
+	}
+
+	/** TODO: This was the last thing we were working on. We need to reveal all adjacent tiles which have no bombs adjacent to themselves. */
+	TileClickResponse click(bool isLeftClick)
+	{
+		// TODO: Implement check whether this tile has a bomb.
+		if (isLeftClick) {
+			switch (state) {
+				case TileState::Hidden: {
+					if (isBomb()) {
+						// TODO: Lose the game
+						state = TileState::Exploded;
+					} else {
+						//state = TileState::Revealed;
+					}
+				} break;
+			}
+		} else {
+			if (state == TileState::Hidden) {
+				state = TileState::Flagged;
+			} else if (state == TileState::Flagged) {
+				state = TileState::Hidden;
+			}
+		}
+	}
+
+	/**
+	 * Hidden: Gray
+	 * Revealed: Green
+	 * Flagged: Yellow
+	 * Exploded: Red
+	 * 
+	 */
 	void render()
 	{
-		SDL_Rect rect = { x * Configuration::TileSize, y * Configuration::TileSize, Configuration::TileSize, Configuration::TileSize };
-		//SDL_SetRenderDrawColor(renderer, (x * Configuration::TileSize) % 256, (y * Configuration::TileSize) % 256, ((x * 8) + (y * 8)) % 256, 0xFF);
-		SDL_SetRenderDrawColor(renderer, 0xFF * static_cast<int>(clicked), 0xFF, 0x00, 0xFF);
-		SDL_RenderFillRect(renderer, &rect);
+		if (state != previousState) {
+			switch (state) {
+				case TileState::Hidden: {
+					SDL_SetRenderDrawColor(renderer, 0xF0, 0xF0, 0xF0, 0xFF);
 
-		/** Draw the outline of the tile */
-		SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
-		SDL_RenderDrawRect(renderer, &rect);
+					// TODO: Remove
+					if (isBomb()) {
+						SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0xFF, 0xFF);
+					}
+				} break;
+
+				case TileState::Revealed: {
+					SDL_SetRenderDrawColor(renderer, 0x00, 0xFF, 0x00, 0xFF);
+				} break;
+
+				case TileState::Flagged: {
+					SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0xFF, 0xFF);
+				} break;
+
+				case TileState::Exploded: {
+					SDL_SetRenderDrawColor(renderer, 0xFF, 0x00, 0x00, 0xFF);
+				} break;
+			}
+
+			SDL_Rect rect = { x * Configuration::TileSize, y * Configuration::TileSize, Configuration::TileSize, Configuration::TileSize };
+			SDL_RenderFillRect(renderer, &rect);
+
+			/** Draw the outline of the tile */
+			SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+			SDL_RenderDrawRect(renderer, &rect);
+
+			if ((adjacent_bombs) && (state == TileState::Revealed)) {
+				SDL_Color black = { 0x00, 0x00, 0x00, 0xFF };
+				const auto surface = TTF_RenderText_Solid(font, std::to_string(adjacent_bombs).c_str(), black);
+				const auto texture = SDL_CreateTextureFromSurface(renderer, surface);
+				SDL_RenderCopy(renderer, texture, nullptr, &rect);
+			}
+
+			previousState = state;
+		}
 	}
 };
 
 class Map : IGameObject
 {
-public:
 	size_t tiles_wide;
 	size_t tiles_high;
 	size_t tile_size;
 
 	std::vector<std::vector<Tile>> tiles;
+
+protected:
+	void setBombs()
+	{
+		for (auto& row : tiles) {
+			for (auto& tile : row) {
+				if (tile_distribution(generator)) {
+					tile.setBomb();
+				}
+			}
+		}
+	}
+
+	void calculateAdjacentBombs()
+	{
+		for (auto i = 0; i < tiles.size(); ++i) {
+			for (auto j = 0; j < tiles[i].size(); ++j) {
+				size_t nearbyBombs = 0;
+
+				if (i > 0 && j > 0 && tiles[i - 1][j - 1].isBomb()) nearbyBombs++;
+				if (i > 0 && tiles[i - 1][j].isBomb()) nearbyBombs++;
+				if (i > 0 && (j < tiles[i].size() - 1) && tiles[i - 1][j + 1].isBomb()) nearbyBombs++;
+				if (j > 0 && tiles[i][j - 1].isBomb()) nearbyBombs++;
+				if ((j < tiles[i].size() - 1) && tiles[i][j + 1].isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && j > 0 && tiles[i + 1][j - 1].isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && tiles[i + 1][j].isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && tiles[i + 1][j + 1].isBomb()) nearbyBombs++;
+
+				tiles[i][j].setAdjacentBombs(nearbyBombs);
+			}
+		}
+	}
 
 public:
 	
@@ -81,9 +240,15 @@ public:
 		}
 	}
 
-	void click(int x, int y)
+	void initialize(int x, int y)
 	{
-		tiles[y][x].click();
+		setBombs();
+		calculateAdjacentBombs();
+	}
+
+	void click(int x, int y, bool isLeftClick)
+	{
+		tiles[y][x].click(isLeftClick);
 	}
 
 	void render()
@@ -94,11 +259,43 @@ public:
 			}
 		}
 	}
+
+protected:
+	void revealTiles(std::vector<Tile> queue)
+	{
+		while (queue.size()) {
+			auto current = queue.back();
+			queue.pop_back();
+
+			if (current.isRevealable()) {
+				if (current.getAdjacentBombs() == 0) {
+					int i = current.getX();
+					int j = current.getY();
+					if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    queue.push_back(tiles[i - 1][j - 1]);
+					if (i > 0 && (tiles[i - 1][j].isRevealable()))        queue.push_back(tiles[i - 1][j]);
+					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1].isRevealable()))    queue.push_back(tiles[i - 1][j + 1]);
+					if (j > 0 && (tiles[i][j - 1].isRevealable()))        queue.push_back(tiles[i][j - 1]);;
+					if ((j < tiles[i].size() - 1) && (tiles[i][j + 1].isRevealable()))        queue.push_back(tiles[i][j + 1]);
+					if ((i < tiles.size() - 1) && j > 0 && (tiles[i + 1][j - 1].isRevealable()))    queue.push_back(tiles[i + 1][j - 1]);
+					if ((i < tiles.size() - 1) && (tiles[i + 1][j].isRevealable()))        queue.push_back(tiles[i + 1][j]);
+					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1].isRevealable()))    queue.push_back(tiles[i + 1][j + 1]);
+				}
+				current.reveal();
+			}
+		}
+	}
+
+	void revealTile(Tile& tile)
+	{
+		std::vector<Tile> tilesToReveal;
+		tilesToReveal.push_back(tile);
+		revealTiles(tilesToReveal);
+	}
 };
 
 class GameState
 {
-public:
+	bool initialized = false;
 	Map map;
 
 public:
@@ -107,6 +304,16 @@ public:
 		: map { }
 	{
 		//
+	}
+
+	void click(int x, int y, bool isLeftClick)
+	{
+		if (!initialized && isLeftClick) {
+			map.initialize(x, y);
+			initialized = true;
+		}
+
+		map.click(x, y, isLeftClick);
 	}
 
 	void render()
@@ -131,7 +338,12 @@ public:
 			std::exit(EXIT_FAILURE);
 		}
 
-		window = std::make_shared<SDL_Window*>(SDL_CreateWindow("Minesweeper", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 320, 32 + 320, SDL_WINDOW_SHOWN));
+		if (TTF_Init() == -1) {
+			SDL_LogError(SDL_LOG_CATEGORY_SYSTEM, "[Error] Could not initialize SDL Font library: %s\n", TTF_GetError());
+			std::exit(EXIT_FAILURE);
+		}
+
+		window = std::make_shared<SDL_Window*>(SDL_CreateWindow("Minesweeper", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 20 * Configuration::TileSize, (2 * Configuration::TileSize) + (20 * Configuration::TileSize), SDL_WINDOW_SHOWN));
 		surface = std::make_shared<SDL_Surface*>(SDL_GetWindowSurface(*window));
 		
 		// TODO: Refactor
@@ -141,10 +353,20 @@ public:
 			std::cerr << "[Error] Failed to initialize renderer: " << SDL_GetError() << "\n";
 			std::exit(EXIT_FAILURE);
 		}
+
+		//font = TTF_OpenFont("m42.ttf", 8);
+		font = TTF_OpenFont("ShareTechMono-Regular.ttf", 10);
+
+		if (!font) {
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", TTF_GetError(), *window);
+			//std::exit(EXIT_FAILURE);
+		}
 	}
 
 	~Game()
 	{
+		TTF_Quit();
+		SDL_DestroyRenderer(renderer);
 		SDL_DestroyWindow(*window);
 		SDL_Quit();
 	}
@@ -173,10 +395,13 @@ protected:
 
 				case SDL_MOUSEBUTTONUP: {
 					int x_tile = (event.button.x) / Configuration::TileSize;
-					int y_tile = (event.button.y - 32) / Configuration::TileSize;
+					int y_tile = (event.button.y - (2 * Configuration::TileSize)) / Configuration::TileSize;
 
 					// TODO: Refactor please
-					currentState.map.click(x_tile, y_tile);
+					if ((x_tile >= 0) && (y_tile >= 0)) {
+						bool left_click = event.button.button == SDL_BUTTON_LEFT;
+						currentState.click(x_tile, y_tile, left_click);
+					}
 				} break;
 
 				case SDL_KEYUP: {
@@ -199,12 +424,12 @@ protected:
 
 	void render()
 	{
-		SDL_Rect score_viewport = { 0, 0, 320, 32 };
-		SDL_Rect map_viewport = { 0, 32, 320, 320 };
+		SDL_Rect score_viewport = { 0, 0, (20 * Configuration:: TileSize), (2 * Configuration::TileSize) };
+		SDL_Rect map_viewport = { 0, (2 * Configuration::TileSize), (20 * Configuration::TileSize), (20 * Configuration::TileSize) };
 
 		// TODO: Refactor
 		SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
-		SDL_RenderClear(renderer);
+		//SDL_RenderClear(renderer);
 
 		// Render the map.
 		SDL_RenderSetViewport(renderer, &map_viewport);
