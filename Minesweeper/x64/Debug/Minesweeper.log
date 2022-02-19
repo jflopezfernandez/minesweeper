@@ -1,1 +1,17 @@
-﻿  Minesweeper.vcxproj -> C:\Users\jflop\source\repos\Minesweeper\x64\Debug\Minesweeper.exe
+﻿  main.cpp
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(179,24): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(179,1): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(179,53): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(179,95): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(179,120): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(404,1): warning C4267: 'argument': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(456,1): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(457,1): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(491,41): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(491,1): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(491,73): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(492,35): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(492,1): warning C4267: 'initializing': conversion from 'size_t' to 'int', possible loss of data
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(492,67): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+C:\Users\jflop\source\repos\Minesweeper\Minesweeper\main.cpp(492,99): warning C4838: conversion from 'size_t' to 'int' requires a narrowing conversion
+  Minesweeper.vcxproj -> C:\Users\jflop\source\repos\Minesweeper\x64\Debug\Minesweeper.exe

@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <memory>
+#include <queue>
 #include <random>
 #include <sstream>
 #include <string>
@@ -194,6 +195,17 @@ public:
 	}
 };
 
+void addTileToQueue(std::queue<Tile>& queue, const Tile& tile) noexcept
+{
+	/*for (const auto& t : queue) {
+		if (t.getX() == tile.getX() && t.getY() == tile.getY()) {
+			return;
+		}
+	}*/
+
+	queue.emplace(tile);
+}
+
 class Map : IGameObject
 {
 	size_t tiles_wide;
@@ -259,7 +271,7 @@ public:
 
 	void initialize(int x, int y)
 	{
-		setBombs();
+		//setBombs();
 		calculateAdjacentBombs();
 	}
 
@@ -293,34 +305,47 @@ public:
 	}
 
 protected:
-	void revealTiles(std::vector<Tile> queue)
+	void revealTiles(std::queue<Tile> queue)
 	{
 		while (queue.size()) {
-			auto current = queue.back();
-			queue.pop_back();
+			auto current = queue.front();
+			queue.pop();
 
 			if (current.isRevealable()) {
+				int i = current.getX();
+				int j = current.getY();
+
 				if (current.getAdjacentBombs() == 0) {
-					int i = current.getX();
-					int j = current.getY();
-					if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    queue.push_back(tiles[i - 1][j - 1]);
+					/*if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    queue.push_back(tiles[i - 1][j - 1]);
 					if (i > 0 && (tiles[i - 1][j].isRevealable()))        queue.push_back(tiles[i - 1][j]);
 					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1].isRevealable()))    queue.push_back(tiles[i - 1][j + 1]);
 					if (j > 0 && (tiles[i][j - 1].isRevealable()))        queue.push_back(tiles[i][j - 1]);;
 					if ((j < tiles[i].size() - 1) && (tiles[i][j + 1].isRevealable()))        queue.push_back(tiles[i][j + 1]);
 					if ((i < tiles.size() - 1) && j > 0 && (tiles[i + 1][j - 1].isRevealable()))    queue.push_back(tiles[i + 1][j - 1]);
 					if ((i < tiles.size() - 1) && (tiles[i + 1][j].isRevealable()))        queue.push_back(tiles[i + 1][j]);
-					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1].isRevealable()))    queue.push_back(tiles[i + 1][j + 1]);
+					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1].isRevealable()))    queue.push_back(tiles[i + 1][j + 1]);*/
+
+					if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    addTileToQueue(queue, tiles[i - 1][j - 1]);
+					if (i > 0 && (tiles[i - 1][j].isRevealable()))        addTileToQueue(queue, tiles[i - 1][j]);
+					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1].isRevealable()))    addTileToQueue(queue, tiles[i - 1][j + 1]);
+					if (j > 0 && (tiles[i][j - 1].isRevealable()))        addTileToQueue(queue, tiles[i][j - 1]);;
+					if ((j < tiles[i].size() - 1) && (tiles[i][j + 1].isRevealable()))        addTileToQueue(queue, tiles[i][j + 1]);
+					if ((i < tiles.size() - 1) && j > 0 && (tiles[i + 1][j - 1].isRevealable()))    addTileToQueue(queue, tiles[i + 1][j - 1]);
+					if ((i < tiles.size() - 1) && (tiles[i + 1][j].isRevealable()))        addTileToQueue(queue, tiles[i + 1][j]);
+					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1].isRevealable()))    addTileToQueue(queue, tiles[i + 1][j + 1]);
 				}
+				
 				current.reveal();
+
+				tiles[i][j] = current;
 			}
 		}
 	}
 
 	bool revealTile(Tile& tile)
 	{
-		std::vector<Tile> tilesToReveal;
-		tilesToReveal.push_back(tile);
+		std::queue<Tile> tilesToReveal;
+		tilesToReveal.push(tile);
 		revealTiles(tilesToReveal);
 		return nonBombTilesLeftToReveal == 0;
 	}
