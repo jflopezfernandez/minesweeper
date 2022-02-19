@@ -33,6 +33,12 @@ public:
 	virtual void render() = 0;
 };
 
+enum class GameEndResult
+{
+	Victory,
+	Defeat
+};
+
 enum class TileClickResponse
 {
 	Nothing,
@@ -118,8 +124,10 @@ public:
 					if (isBomb()) {
 						// TODO: Lose the game
 						state = TileState::Exploded;
+						return TileClickResponse::Exploded;
 					} else {
 						//state = TileState::Revealed;
+						return TileClickResponse::Revealed;
 					}
 				} break;
 			}
@@ -130,6 +138,8 @@ public:
 				state = TileState::Hidden;
 			}
 		}
+
+		return TileClickResponse::Nothing;
 	}
 
 	/**
@@ -192,6 +202,8 @@ class Map : IGameObject
 
 	std::vector<std::vector<Tile>> tiles;
 
+	int nonBombTilesLeftToReveal = 0;
+
 protected:
 	void setBombs()
 	{
@@ -199,6 +211,8 @@ protected:
 			for (auto& tile : row) {
 				if (tile_distribution(generator)) {
 					tile.setBomb();
+				} else {
+					++nonBombTilesLeftToReveal;
 				}
 			}
 		}
@@ -224,6 +238,9 @@ protected:
 		}
 	}
 
+//protected:
+	//bool revealTile(Tile& tile);
+
 public:
 	
 	Map(size_t tiles_wide = 20, size_t tiles_high = 20, size_t tile_size = Configuration::TileSize)
@@ -246,9 +263,24 @@ public:
 		calculateAdjacentBombs();
 	}
 
-	void click(int x, int y, bool isLeftClick)
+	bool click(int x, int y, bool isLeftClick)
 	{
-		tiles[y][x].click(isLeftClick);
+		const auto response = tiles[y][x].click(isLeftClick);
+		auto game_over = false;
+
+		// TODO: Actually use the click response.
+		switch (response) {
+			case TileClickResponse::Revealed: {
+				game_over = revealTile(tiles[y][x]);
+				const auto game_over_state = GameEndResult::Victory;
+			} break;
+
+			case TileClickResponse::Exploded: {
+				// TODO: Game Over -> Prepare to reset
+			} break;
+		}
+
+		return game_over;
 	}
 
 	void render()
@@ -285,11 +317,12 @@ protected:
 		}
 	}
 
-	void revealTile(Tile& tile)
+	bool revealTile(Tile& tile)
 	{
 		std::vector<Tile> tilesToReveal;
 		tilesToReveal.push_back(tile);
 		revealTiles(tilesToReveal);
+		return nonBombTilesLeftToReveal == 0;
 	}
 };
 
@@ -306,14 +339,14 @@ public:
 		//
 	}
 
-	void click(int x, int y, bool isLeftClick)
+	bool click(int x, int y, bool isLeftClick)
 	{
 		if (!initialized && isLeftClick) {
 			map.initialize(x, y);
 			initialized = true;
 		}
 
-		map.click(x, y, isLeftClick);
+		return map.click(x, y, isLeftClick);
 	}
 
 	void render()
@@ -355,7 +388,8 @@ public:
 		}
 
 		//font = TTF_OpenFont("m42.ttf", 8);
-		font = TTF_OpenFont("ShareTechMono-Regular.ttf", 10);
+		//font = TTF_OpenFont("ShareTechMono-Regular.ttf", 10);
+		font = TTF_OpenFont("C:\\Users\\jflop\\source\\repos\\Minesweeper\\x64\\Debug\\ShareTechMono-Regular.ttf", 10);
 
 		if (!font) {
 			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", TTF_GetError(), *window);
@@ -400,7 +434,12 @@ protected:
 					// TODO: Refactor please
 					if ((x_tile >= 0) && (y_tile >= 0)) {
 						bool left_click = event.button.button == SDL_BUTTON_LEFT;
-						currentState.click(x_tile, y_tile, left_click);
+						const auto state = currentState.click(x_tile, y_tile, left_click);
+
+						if (state == true) {
+							// TODO: Game over
+							// ...
+						}
 					}
 				} break;
 
