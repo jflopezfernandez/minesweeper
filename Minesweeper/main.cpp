@@ -12,9 +12,24 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 
+namespace Configuration
+{
+	namespace Map
+	{
+		namespace Size
+		{
+			const size_t Width = 20;
+			const size_t Height = 20;
+		} /** Namespace Map */
+
+	} /** Namespace Map */
+
+	size_t TileSize = 32;
+} /** Namespace Configuration */
+
 std::random_device random_device;
 std::mt19937_64 generator(random_device());
-std::binomial_distribution tile_distribution(1, 0.05);
+std::binomial_distribution tile_distribution(1, 0.08);
 
 TTF_Font* font = nullptr;
 
@@ -23,10 +38,7 @@ SDL_Renderer* renderer = nullptr;
 SDL_Color blue = { 0x00, 0x00, 0xFF, 0xFF };
 SDL_Color red = { 0xFF, 0x00, 0x00, 0xFF };
 
-namespace Configuration
-{
-	size_t TileSize = 32;
-} /** Namespace Configuration */
+bool game_active = true;
 
 class IGameObject
 {
@@ -158,9 +170,9 @@ public:
 					SDL_SetRenderDrawColor(renderer, 0xF0, 0xF0, 0xF0, 0xFF);
 
 					// TODO: Remove
-					if (isBomb()) {
+					/*if (isBomb()) {
 						SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0xFF, 0xFF);
-					}
+					}*/
 				} break;
 
 				case TileState::Revealed: {
@@ -250,12 +262,9 @@ protected:
 		}
 	}
 
-//protected:
-	//bool revealTile(Tile& tile);
-
 public:
 	
-	Map(size_t tiles_wide = 20, size_t tiles_high = 20, size_t tile_size = Configuration::TileSize)
+	Map(size_t tiles_wide = Configuration::Map::Size::Width, size_t tiles_high = Configuration::Map::Size::Height, size_t tile_size = Configuration::TileSize)
 		: tiles_wide { tiles_wide }, tiles_high { tiles_high }, tile_size { tile_size }
 	{
 		for (auto h = 0; h < tiles_high; ++h) {
@@ -271,7 +280,7 @@ public:
 
 	void initialize(int x, int y)
 	{
-		//setBombs();
+		setBombs();
 		calculateAdjacentBombs();
 	}
 
@@ -289,6 +298,7 @@ public:
 
 			case TileClickResponse::Exploded: {
 				// TODO: Game Over -> Prepare to reset
+				game_active = false;
 			} break;
 		}
 
@@ -311,11 +321,11 @@ protected:
 			auto current = queue.front();
 			queue.pop();
 
-			if (current.isRevealable()) {
-				int i = current.getX();
-				int j = current.getY();
+			int i = current.getY();
+			int j = current.getX();
 
-				if (current.getAdjacentBombs() == 0) {
+			if (tiles[i][j].isRevealable()) {
+				if (tiles[i][j].getAdjacentBombs() == 0) {
 					/*if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    queue.push_back(tiles[i - 1][j - 1]);
 					if (i > 0 && (tiles[i - 1][j].isRevealable()))        queue.push_back(tiles[i - 1][j]);
 					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1].isRevealable()))    queue.push_back(tiles[i - 1][j + 1]);
