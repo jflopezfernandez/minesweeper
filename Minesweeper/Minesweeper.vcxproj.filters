@@ -26,5 +26,8 @@
     <Font Include="..\..\..\..\Downloads\Share_Tech_Mono\ShareTechMono-Regular.ttf">
       <Filter>Resource Files</Filter>
     </Font>
+    <Font Include="..\..\..\..\Downloads\Roboto_Mono\static\RobotoMono-Light.ttf">
+      <Filter>Resource Files</Filter>
+    </Font>
   </ItemGroup>
 </Project>

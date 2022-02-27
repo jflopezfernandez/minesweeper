@@ -1,3 +1,4 @@
 C:\Users\jflop\source\repos\Minesweeper\x64\Debug\m42.ttf
 C:\Users\jflop\source\repos\Minesweeper\x64\Debug\ShareTechMono-Regular.ttf
 C:\Users\jflop\source\repos\Minesweeper\Minesweeper\x64\Debug\Minesweeper.vcxproj.CopyComplete
+C:\Users\jflop\source\repos\Minesweeper\x64\Debug\RobotoMono-Light.ttf

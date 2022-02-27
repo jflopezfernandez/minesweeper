@@ -1,6 +1,7 @@
 
 #include <cstdlib>
 
+#include <chrono>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -20,8 +21,8 @@ namespace Configuration
 	{
 		namespace Size
 		{
-			const size_t Width = 3;
-			const size_t Height = 3;
+			constexpr size_t Width = 20;
+			constexpr size_t Height = 20;
 		} /** Namespace Map */
 
 	} /** Namespace Map */
@@ -30,10 +31,12 @@ namespace Configuration
 } /** Namespace Configuration */
 
 std::random_device random_device;
-std::mt19937_64 generator(random_device());
-std::binomial_distribution tile_distribution(1, 0.5);
+std::seed_seq random_seed { 0 };
+std::mt19937_64 generator(random_seed);
+std::binomial_distribution tile_distribution(1, 0.065);
 
 TTF_Font* font = nullptr;
+TTF_Font* score_font = nullptr;
 
 SDL_Renderer* renderer = nullptr;
 
@@ -45,7 +48,46 @@ bool game_active = true;
 class IGameObject
 {
 public:
+	virtual void update() = 0;
 	virtual void render() = 0;
+};
+
+class Scoreboard : IGameObject
+{
+	std::chrono::time_point<std::chrono::high_resolution_clock> time_started = std::chrono::high_resolution_clock::now();
+	std::ostringstream output;
+
+public:
+	Scoreboard()
+	{
+		/** Default constructor */
+	}
+
+	virtual void update()
+	{
+		const auto current_time = std::chrono::high_resolution_clock::now();
+		const auto duration = std::chrono::duration_cast<std::chrono::seconds>(current_time - time_started) * 360;
+		
+		/** Reset the output buffer */
+		output = std::ostringstream { };
+		output << duration;
+
+		// TODO: Remove after testing.
+		// std::clog << output.str() << "\n";
+	}
+
+	virtual void render()
+	{
+		SDL_Rect rect = { 5, 0, Configuration::TileSize * 4, Configuration::TileSize * 2 };
+		SDL_Color black = { 0x00, 0x00, 0x00, 0xFF };
+		SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0x00, 0xFF);
+		SDL_RenderFillRect(renderer, &rect);
+
+		SDL_Color white = { 0xFF, 0xFF, 0xFF, 0xFF };
+		const auto surface = TTF_RenderText_Solid(score_font, output.str().c_str(), white);
+		const auto texture = SDL_CreateTextureFromSurface(renderer, surface);
+		SDL_RenderCopy(renderer, texture, nullptr, &rect);
+	}
 };
 
 enum class GameStatus
@@ -82,10 +124,10 @@ class Tile : IGameObject
 	TileState state = TileState::Hidden;
 	TileState previousState = TileState::Undrawn;
 
-	std::vector<Tile> adjacent_tiles { };
+	std::vector<std::shared_ptr<Tile>> adjacent_tiles { };
 
 public:
-	Tile(int x, int y)
+	Tile(int x, int y) noexcept
 		: x { x }, y { y }
 	{
 		//
@@ -101,7 +143,7 @@ public:
 		return y;
 	}
 
-	void setBomb()
+	void setBomb() noexcept
 	{
 		is_bomb = true;
 		previousState = TileState::Undrawn;
@@ -112,7 +154,7 @@ public:
 		return is_bomb;
 	}
 
-	void setAdjacentBombs(size_t n)
+	void setAdjacentBombs(size_t n) noexcept
 	{
 		adjacent_bombs = n;
 	}
@@ -122,7 +164,17 @@ public:
 		return adjacent_bombs;
 	}
 
-	void addAdjacentTile(Tile& tile) noexcept
+	bool removeBomb() noexcept
+	{
+		if (isBomb()) {
+			is_bomb = false;
+			return true;
+		}
+
+		return false;
+	}
+
+	void addAdjacentTile(std::shared_ptr<Tile>& tile) noexcept
 	{
 		adjacent_tiles.emplace_back(tile);
 	}
@@ -130,6 +182,11 @@ public:
 	bool isRevealable() const noexcept
 	{
 		return (state == TileState::Hidden) && (!isBomb());
+	}
+
+	std::vector<std::shared_ptr<Tile>>& getAdjacentTiles() noexcept
+	{
+		return adjacent_tiles;
 	}
 
 	bool reveal() noexcept
@@ -142,7 +199,7 @@ public:
 		return false;
 	}
 
-	TileClickResponse click(bool isLeftClick)
+	TileClickResponse click(bool isLeftClick) noexcept
 	{
 		// TODO: Implement check whether this tile has a bomb.
 		if (isLeftClick) {
@@ -169,6 +226,11 @@ public:
 		return TileClickResponse::Nothing;
 	}
 
+	virtual void update()
+	{
+		//
+	}
+
 	/**
 	 * Hidden: Gray
 	 * Revealed: Green
@@ -176,7 +238,7 @@ public:
 	 * Exploded: Red
 	 * 
 	 */
-	void render()
+	virtual void render()
 	{
 		if (state != previousState) {
 			switch (state) {
@@ -184,9 +246,9 @@ public:
 					SDL_SetRenderDrawColor(renderer, 0xF0, 0xF0, 0xF0, 0xFF);
 
 					// TODO: Remove
-					/*if (isBomb()) {
+					if (isBomb()) {
 						SDL_SetRenderDrawColor(renderer, 0x00, 0x00, 0xFF, 0xFF);
-					}*/
+					}
 				} break;
 
 				case TileState::Revealed: {
@@ -221,7 +283,7 @@ public:
 	}
 };
 
-void addTileToQueue(std::queue<Tile>& queue, std::map<std::pair<int, int>, bool>& tilesMap, Tile& tile) noexcept
+void addTileToQueue(std::queue<std::shared_ptr<Tile>>& queue, std::map<std::pair<int, int>, bool>& tilesMap, std::shared_ptr<Tile> tile) noexcept
 {
 	/*for (const auto& t : queue) {
 		if (t.getX() == tile.getX() && t.getY() == tile.getY()) {
@@ -229,11 +291,11 @@ void addTileToQueue(std::queue<Tile>& queue, std::map<std::pair<int, int>, bool>
 		}
 	}*/
 
-	if (tilesMap.find(std::make_pair<int, int>(tile.getX(), tile.getY())) != tilesMap.end()) {
+	if (tilesMap.find(std::make_pair<int, int>(tile->getX(), tile->getY())) != tilesMap.end()) {
 		return;
 	}
 
-	queue.emplace(tile);
+	queue.push(tile);
 }
 
 class Map : IGameObject
@@ -242,7 +304,7 @@ class Map : IGameObject
 	size_t tiles_high;
 	size_t tile_size;
 
-	std::vector<std::vector<Tile>> tiles;
+	std::vector<std::vector<std::shared_ptr<Tile>>> tiles { };
 
 	int nonBombTilesLeftToReveal = 0;
 
@@ -251,9 +313,9 @@ protected:
 	{
 		for (auto& row : tiles) {
 			for (auto& tile : row) {
-				//if (tile_distribution(generator)) {
-				if ((tile.getX() == 0 && tile.getY() == 0) || (tile.getX() == 0 && tile.getY() == 2)) {
-					tile.setBomb();
+				if (tile_distribution(generator)) {
+				//if ((tile->getX() == 0 && tile->getY() == 0) || (tile->getX() == 0 && tile->getY() == 2)) {
+					tile->setBomb();
 				} else {
 					++nonBombTilesLeftToReveal;
 				}
@@ -261,22 +323,22 @@ protected:
 		}
 	}
 
-	void calculateAdjacentBombs()
+	void calculateAdjacentBombs() noexcept
 	{
 		for (auto i = 0; i < tiles.size(); ++i) {
 			for (auto j = 0; j < tiles[i].size(); ++j) {
 				size_t nearbyBombs = 0;
 
-				if (i > 0 && j > 0 && tiles[i - 1][j - 1].isBomb()) nearbyBombs++;
-				if (i > 0 && tiles[i - 1][j].isBomb()) nearbyBombs++;
-				if (i > 0 && (j < tiles[i].size() - 1) && tiles[i - 1][j + 1].isBomb()) nearbyBombs++;
-				if (j > 0 && tiles[i][j - 1].isBomb()) nearbyBombs++;
-				if ((j < tiles[i].size() - 1) && tiles[i][j + 1].isBomb()) nearbyBombs++;
-				if ((i < tiles.size() - 1) && j > 0 && tiles[i + 1][j - 1].isBomb()) nearbyBombs++;
-				if ((i < tiles.size() - 1) && tiles[i + 1][j].isBomb()) nearbyBombs++;
-				if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && tiles[i + 1][j + 1].isBomb()) nearbyBombs++;
+				if (i > 0 && j > 0 && tiles[i - 1][j - 1]->isBomb()) nearbyBombs++;
+				if (i > 0 && tiles[i - 1][j]->isBomb()) nearbyBombs++;
+				if (i > 0 && (j < tiles[i].size() - 1) && tiles[i - 1][j + 1]->isBomb()) nearbyBombs++;
+				if (j > 0 && tiles[i][j - 1]->isBomb()) nearbyBombs++;
+				if ((j < tiles[i].size() - 1) && tiles[i][j + 1]->isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && j > 0 && tiles[i + 1][j - 1]->isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && tiles[i + 1][j]->isBomb()) nearbyBombs++;
+				if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && tiles[i + 1][j + 1]->isBomb()) nearbyBombs++;
 
-				tiles[i][j].setAdjacentBombs(nearbyBombs);
+				tiles[i][j]->setAdjacentBombs(nearbyBombs);
 			}
 		}
 	}
@@ -287,31 +349,31 @@ public:
 	{
 		/** Create the map by populating it with tiles. */
 		for (auto h = 0; h < tiles_high; ++h) {
-			std::vector<Tile> row { };
+			std::vector<std::shared_ptr<Tile>> row { };
 
 			for (auto w = 0; w < tiles_wide; ++w) {
-				row.emplace_back(Tile(w, h));
+				row.emplace_back(std::make_shared<Tile>(Tile(w, h)));
 			}
 
-			tiles.emplace_back(row);
+			tiles.push_back(row);
 		}
 
 		/** Initialize each tile's adjacent tiles list. */
 		for (auto i = 0; i < tiles.size(); ++i) {
 			for (auto j = 0; j < tiles[i].size(); ++j) {
-				if (i > 0 && j > 0) tiles[i][j].addAdjacentTile(tiles[i-1][j-1]);
-				if (i > 0) tiles[i][j].addAdjacentTile(tiles[i-1][j]);
-				if (i > 0 && (j < tiles[i].size() - 1)) tiles[i][j].addAdjacentTile(tiles[i-1][j+1]);
-				if (j > 0) tiles[i][j].addAdjacentTile(tiles[i][j-1]);
-				if ((j < tiles[i].size() - 1)) tiles[i][j].addAdjacentTile(tiles[i][j+1]);
-				if ((i < tiles.size() - 1) && j > 0) tiles[i][j].addAdjacentTile(tiles[i+1][j-1]);
-				if ((i < tiles.size() - 1)) tiles[i][j].addAdjacentTile(tiles[i+1][j]);
-				if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1)) tiles[i][j].addAdjacentTile(tiles[i+1][j+1]);
+				if (i > 0 && j > 0) tiles[i][j]->addAdjacentTile(tiles[i-1][j-1]);
+				if (i > 0) tiles[i][j]->addAdjacentTile(tiles[i-1][j]);
+				if (i > 0 && (j < tiles[i].size() - 1)) tiles[i][j]->addAdjacentTile(tiles[i-1][j+1]);
+				if (j > 0) tiles[i][j]->addAdjacentTile(tiles[i][j-1]);
+				if ((j < tiles[i].size() - 1)) tiles[i][j]->addAdjacentTile(tiles[i][j+1]);
+				if ((i < tiles.size() - 1) && j > 0) tiles[i][j]->addAdjacentTile(tiles[i+1][j-1]);
+				if ((i < tiles.size() - 1)) tiles[i][j]->addAdjacentTile(tiles[i+1][j]);
+				if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1)) tiles[i][j]->addAdjacentTile(tiles[i+1][j+1]);
 			}
 		}
 	}
 
-	void initialize(int x, int y)
+	void initialize(int x, int y) noexcept
 	{
 		/**
 		 * TODO: Use the x and y coordinates to make sure
@@ -319,24 +381,37 @@ public:
 		 * in the adjacent ones.
 		 */
 		setBombs();
+
+		if (tiles[y][x]->removeBomb()) {
+			++nonBombTilesLeftToReveal;
+		}
+
+		for (auto& tile : tiles[y][x]->getAdjacentTiles()) {
+			if (tile->removeBomb()) {
+				++nonBombTilesLeftToReveal;
+			}
+		}
+
 		calculateAdjacentBombs();
 	}
 
 	GameStatus click(int x, int y, bool isLeftClick)
 	{
-		const auto response = tiles[y][x].click(isLeftClick);
-		auto game_over = false;
+		const auto response = tiles[y][x]->click(isLeftClick);
 
-		// TODO: Actually use the click response.
 		switch (response) {
 			case TileClickResponse::Revealed: {
-				game_over = revealTile(tiles[y][x]);
-				return GameStatus::Victory;
+				/**
+				 * The revealTile function returns true if there are
+				 * no more non-bomb tiles to reveal.
+				 * 
+				 */
+				if (revealTile(tiles[y][x])) {
+					return GameStatus::Victory;
+				}
 			} break;
 
 			case TileClickResponse::Exploded: {
-				// TODO: Game Over -> Prepare to reset
-				game_active = false;
 				return GameStatus::Defeat;
 			} break;
 		}
@@ -344,39 +419,44 @@ public:
 		return GameStatus::Active;
 	}
 
-	void render()
+	virtual void update()
+	{
+		//
+	}
+
+	virtual void render()
 	{
 		for (auto& row : tiles) {
 			for (auto& tile : row) {
-				tile.render();
+				tile->render();
 			}
 		}
 	}
 
 protected:
-	void revealTiles(std::queue<Tile>& queue, std::map<std::pair<int, int>, bool>& tilesTable)
+	void revealTiles(std::queue<std::shared_ptr<Tile>>& queue, std::map<std::pair<int, int>, bool>& tilesTable)
 	{
 		while (queue.size()) {
 			auto current = queue.front();
 			queue.pop();
 
-			int i = current.getY();
-			int j = current.getX();
+			int i = current->getY();
+			int j = current->getX();
 
-			if (tiles[i][j].isRevealable()) {
-				if (tiles[i][j].getAdjacentBombs() == 0) {
-					if (i > 0 && j > 0 && (tiles[i - 1][j - 1].isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i - 1][j - 1]);
-					if (i > 0 && (tiles[i - 1][j].isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i - 1][j]);
-					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1].isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i - 1][j + 1]);
-					if (j > 0 && (tiles[i][j - 1].isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i][j - 1]);;
-					if ((j < tiles[i].size() - 1) && (tiles[i][j + 1].isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i][j + 1]);
-					if ((i < tiles.size() - 1) && j > 0 && (tiles[i + 1][j - 1].isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i + 1][j - 1]);
-					if ((i < tiles.size() - 1) && (tiles[i + 1][j].isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i + 1][j]);
-					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1].isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i + 1][j + 1]);
+			if (tiles[i][j]->isRevealable()) {
+				if (tiles[i][j]->getAdjacentBombs() == 0) {
+					if (i > 0 && j > 0 && (tiles[i - 1][j - 1]->isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i - 1][j - 1]);
+					if (i > 0 && (tiles[i - 1][j]->isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i - 1][j]);
+					if (i > 0 && (j < tiles[i].size() - 1) && (tiles[i - 1][j + 1]->isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i - 1][j + 1]);
+					if (j > 0 && (tiles[i][j - 1]->isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i][j - 1]);;
+					if ((j < tiles[i].size() - 1) && (tiles[i][j + 1]->isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i][j + 1]);
+					if ((i < tiles.size() - 1) && j > 0 && (tiles[i + 1][j - 1]->isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i + 1][j - 1]);
+					if ((i < tiles.size() - 1) && (tiles[i + 1][j]->isRevealable()))        addTileToQueue(queue, tilesTable, tiles[i + 1][j]);
+					if ((i < tiles.size() - 1) && (j < tiles[i].size() - 1) && (tiles[i + 1][j + 1]->isRevealable()))    addTileToQueue(queue, tilesTable, tiles[i + 1][j + 1]);
 				}
 				
 				//if (current.reveal()) {
-				if (tiles[i][j].reveal()) {
+				if (tiles[i][j]->reveal()) {
 					--nonBombTilesLeftToReveal;
 				}
 
@@ -385,13 +465,13 @@ protected:
 		}
 	}
 
-	bool revealTile(Tile tile)
+	bool revealTile(std::shared_ptr<Tile>& tile)
 	{
 		std::map<std::pair<int, int>, bool> tilesTable;
-		const auto tile_coordinates = std::make_pair(tile.getX(), tile.getY());
+		const auto tile_coordinates = std::make_pair(tile->getX(), tile->getY());
 		tilesTable.insert({ tile_coordinates, true });
 
-		std::queue<Tile> tilesToReveal;
+		std::queue<std::shared_ptr<Tile>> tilesToReveal;
 		tilesToReveal.push(tile);
 		revealTiles(tilesToReveal, tilesTable);
 		return nonBombTilesLeftToReveal == 0;
@@ -402,11 +482,11 @@ class SessionState
 {
 	bool initialized = false;
 	Map map;
+	Scoreboard scoreboard;
 
 public:
-
 	SessionState()
-		: map { }
+		: map { }, scoreboard { }
 	{
 		//
 	}
@@ -421,16 +501,29 @@ public:
 		return map.click(x, y, isLeftClick);
 	}
 
-	void render()
+	virtual void update()
 	{
+		scoreboard.update();
+	}
+
+	virtual void render()
+	{
+		/** Render the map. */
+		SDL_Rect map_viewport = { 0, (2 * Configuration::TileSize), (20 * Configuration::TileSize), (20 * Configuration::TileSize) };
+		SDL_RenderSetViewport(renderer, &map_viewport);
 		map.render();
+
+		/** Render the scoreboard. */
+		SDL_Rect score_viewport = { 0, 0, (20 * Configuration::TileSize), (2 * Configuration::TileSize) };
+		SDL_RenderSetViewport(renderer, &score_viewport);
+		scoreboard.render();
 	}
 };
 
 class Game
 {
 	bool running = false;
-	bool paused = false;
+	bool message_shown = false;
 	SessionState currentState;
 	GameStatus gameStatus = GameStatus::Active;
 	std::shared_ptr<SDL_Window*> window = std::make_shared_for_overwrite<SDL_Window*>();
@@ -467,7 +560,14 @@ public:
 
 		if (!font) {
 			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", TTF_GetError(), *window);
-			//std::exit(EXIT_FAILURE);
+			std::exit(EXIT_FAILURE);
+		}
+
+		score_font = TTF_OpenFont("C:\\Users\\jflop\\source\\repos\\Minesweeper\\x64\\Debug\\RobotoMono-Light.ttf", 72);
+
+		if (!score_font) {
+			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Error", TTF_GetError(), *window);
+			std::exit(EXIT_FAILURE);
 		}
 	}
 
@@ -493,6 +593,12 @@ public:
 protected:
 	void processInput()
 	{
+		if (gameStatus != GameStatus::Active) {
+			if (!SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Minesweeper", ((gameStatus == GameStatus::Victory) ? "Victory" : "Defeat"), *window)) {
+				reset();
+			}
+		}
+
 		SDL_Event event;
 
 		while (SDL_PollEvent(&event)) {
@@ -502,21 +608,15 @@ protected:
 				} break;
 
 				case SDL_MOUSEBUTTONUP: {
-					if (!paused) {
-						int x_tile = (event.button.x) / Configuration::TileSize;
-						int y_tile = (event.button.y - (2 * Configuration::TileSize)) / Configuration::TileSize;
+					int x_tile = (event.button.x) / Configuration::TileSize;
+					int y_tile = (event.button.y - (2 * Configuration::TileSize)) / Configuration::TileSize;
 
-						// TODO: Refactor please
-						if ((x_tile >= 0) && (y_tile >= 0)) {
-							bool left_click = event.button.button == SDL_BUTTON_LEFT;
-							gameStatus = currentState.click(x_tile, y_tile, left_click);
-
-							if (gameStatus != GameStatus::Active) {
-								togglePause();
-								const auto message = (gameStatus == GameStatus::Victory) ? "Victory" : "Defeat";
-								SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, message, message, *window);
-							}
-						}
+					// TODO: Refactor please
+					if ((x_tile >= 0) && (y_tile >= 0)) {
+						bool left_click = event.button.button == SDL_BUTTON_LEFT;
+						gameStatus = currentState.click(x_tile, y_tile, left_click);
+					} else {
+						// TODO: Viewport clicks
 					}
 				} break;
 
@@ -533,11 +633,7 @@ protected:
 						} break;
 
 						case SDLK_SPACE: {
-							if (gameStatus != GameStatus::Active) {
-								currentState = SessionState { };
-							}
-
-							togglePause();
+							SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "Minesweeper", "The game is paused.", *window);
 						} break;
 					}
 				} break;
@@ -547,20 +643,15 @@ protected:
 
 	void update()
 	{
-		// TODO: Game logic.
+		currentState.update();
 	}
 
 	void render()
 	{
-		SDL_Rect score_viewport = { 0, 0, (20 * Configuration:: TileSize), (2 * Configuration::TileSize) };
-		SDL_Rect map_viewport = { 0, (2 * Configuration::TileSize), (20 * Configuration::TileSize), (20 * Configuration::TileSize) };
-
 		// TODO: Refactor
 		SDL_SetRenderDrawColor(renderer, 0xFF, 0xFF, 0xFF, 0xFF);
 		//SDL_RenderClear(renderer);
 
-		// Render the map.
-		SDL_RenderSetViewport(renderer, &map_viewport);
 		currentState.render();
 
 		SDL_RenderPresent(renderer);
@@ -569,9 +660,10 @@ protected:
 		SDL_Delay(16);
 	}
 
-	void togglePause() noexcept
+	void reset() noexcept
 	{
-		paused = !paused;
+		currentState = SessionState { };
+		gameStatus = GameStatus::Active;
 	}
 };
 
